@@ -11,23 +11,39 @@ const ScanHistoryPage = () => {
     });
     const [isScanning, setIsScanning] = useState(false);
 
-    useEffect(() => {
-        const fetchData = async () => {
-            try {
-                // Fetch Stats
-                const statsRes = await fetch('http://localhost:8000/api/v1/stats');
-                const statsData = await statsRes.json();
-                if (statsRes.ok) setStats(statsData);
+    const fetchData = async () => {
+        try {
+            // Fetch Stats
+            const statsRes = await fetch('http://localhost:8000/api/v1/stats');
+            const statsData = await statsRes.json();
+            if (statsRes.ok) setStats(statsData);
 
-                // Fetch History
-                const historyRes = await fetch('http://localhost:8000/api/v1/scans');
-                const historyData = await historyRes.json();
-                if (historyRes.ok) setScanHistory(historyData);
-            } catch (error) {
-                console.error('Error fetching data:', error);
-            }
-        };
+            // Fetch History
+            const historyRes = await fetch('http://localhost:8000/api/v1/scans');
+            const historyData = await historyRes.json();
+            if (historyRes.ok) setScanHistory(historyData);
+
+            return historyData;
+        } catch (error) {
+            console.error('Error fetching data:', error);
+            return [];
+        }
+    };
+
+    useEffect(() => {
         fetchData();
+
+        // Setup Polling if any scan is running
+        const interval = setInterval(async () => {
+            const history = await fetchData();
+            const hasRunning = history.some(s => s.status === 'running');
+            if (!hasRunning) {
+                // You could keep polling at a slower rate or stop
+                // clearInterval(interval); 
+            }
+        }, 1000);
+
+        return () => clearInterval(interval);
     }, []);
 
     const handleNewScan = async () => {
@@ -41,13 +57,8 @@ const ScanHistoryPage = () => {
             const response = await fetch('http://localhost:8000/api/v1/scans', { method: 'POST' });
             const data = await response.json();
             if (response.ok) {
-                alert(`Scan triggered successfully! Job ID: ${data.job_id}`);
-                // Refresh history after a short delay
-                setTimeout(async () => {
-                    const res = await fetch('http://localhost:8000/api/v1/scans');
-                    const history = await res.json();
-                    if (res.ok) setScanHistory(history);
-                }, 1000);
+                // fetchData will pick it up on the next interval
+                await fetchData();
             } else {
                 alert(`Error: ${data.detail || 'Failed to trigger scan'}`);
             }
@@ -148,15 +159,28 @@ const ScanHistoryPage = () => {
                                             scanHistory.map((scan, idx) => (
                                                 <tr key={idx} className="hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors">
                                                     <td className="px-6 py-4">
-                                                        <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${scan.status === 'completed' ? 'bg-green-50 text-green-700' :
+                                                        <div className="flex flex-col gap-2">
+                                                            <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${scan.status === 'completed' ? 'bg-green-50 text-green-700' :
                                                                 scan.status === 'failed' ? 'bg-rose-50 text-rose-700' : 'bg-blue-50 text-blue-700'
-                                                            }`}>
-                                                            <span className="relative flex h-2 w-2">
-                                                                <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${scan.status === 'completed' ? 'bg-green-400' : 'bg-blue-400'}`}></span>
-                                                                <span className={`relative inline-flex rounded-full h-2 w-2 ${scan.status === 'completed' ? 'bg-green-500' : 'bg-blue-500'}`}></span>
+                                                                }`}>
+                                                                <span className="relative flex h-2 w-2">
+                                                                    <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${scan.status === 'completed' ? 'bg-green-400' : 'bg-blue-400'}`}></span>
+                                                                    <span className={`relative inline-flex rounded-full h-2 w-2 ${scan.status === 'completed' ? 'bg-green-500' : 'bg-blue-500'}`}></span>
+                                                                </span>
+                                                                {scan.status}
                                                             </span>
-                                                            {scan.status}
-                                                        </span>
+                                                            {scan.status === 'running' && (
+                                                                <div className="w-full max-w-[120px] flex flex-col gap-1">
+                                                                    <div className="h-1.5 w-full bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
+                                                                        <div
+                                                                            className="h-full bg-blue-500 transition-all duration-500"
+                                                                            style={{ width: `${scan.progress || 0}%` }}
+                                                                        ></div>
+                                                                    </div>
+                                                                    <span className="text-[10px] text-slate-400 font-medium">{scan.progress || 0}% complete</span>
+                                                                </div>
+                                                            )}
+                                                        </div>
                                                     </td>
                                                     <td className="px-6 py-4">
                                                         <div className="flex flex-col">
@@ -165,12 +189,18 @@ const ScanHistoryPage = () => {
                                                         </div>
                                                     </td>
                                                     <td className="px-6 py-4">
-                                                        <span className={`font-mono font-bold ${scan.violations_found > 0 ? 'text-rose-600' : 'text-slate-900 dark:text-white'}`}>
-                                                            {scan.violations_found}
-                                                        </span>
+                                                        <div className="flex flex-col">
+                                                            <span className={`font-mono font-bold ${scan.violations_found > 0 ? 'text-rose-600' : 'text-slate-900 dark:text-white'}`}>
+                                                                {scan.violations_found}
+                                                            </span>
+                                                            {scan.status === 'running' && <span className="text-[10px] text-slate-400">detecting...</span>}
+                                                        </div>
                                                     </td>
                                                     <td className="px-6 py-4 text-sm text-slate-500">
-                                                        {scan.records_scanned} records
+                                                        <div className="flex flex-col">
+                                                            <span>{scan.records_scanned?.toLocaleString() || 0} records</span>
+                                                            {scan.status === 'running' && <span className="text-[10px] text-slate-400 italic">scanning database...</span>}
+                                                        </div>
                                                     </td>
                                                 </tr>
                                             ))

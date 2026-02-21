@@ -27,19 +27,31 @@ def scan_table_task(self, job_id: int, table_name: str, target_db_url: str, db_t
         engine = RuleEngine(target_db_url=target_db_url, db_type=db_type)
         
         rules = db.query(Rule).all()
-        
+        total_rules = len(rules)
         total_violations = 0
         total_records_scanned = engine.get_record_count(table_name)
+        
+        # Initial status update
+        job.records_scanned = total_records_scanned
+        job.progress = 0
+        db.commit()
 
-        for rule in rules:
+        for i, rule in enumerate(rules):
             logger.info(f"Applying Rule {rule.id} to {table_name}")
             
             violations_generator = engine.execute_rule(rule.id, table_name, rule.sql_query)
             
             saved_count = engine.save_violations(rule.id, table_name, violations_generator)
             total_violations += saved_count
+            
+            # Update incremental progress
+            progress_percent = int(((i + 1) / total_rules) * 100)
+            job.progress = progress_percent
+            job.violations_found = total_violations
+            db.commit()
 
         job.status = "completed"
+        job.progress = 100
         job.violations_found = total_violations
         job.records_scanned = total_records_scanned
         db.commit()
@@ -51,4 +63,6 @@ def scan_table_task(self, job_id: int, table_name: str, target_db_url: str, db_t
         db.commit()
         raise e
     finally:
+        if 'engine' in locals():
+            engine.cleanup()
         db.close()

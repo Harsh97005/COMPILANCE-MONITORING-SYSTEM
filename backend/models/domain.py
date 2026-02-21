@@ -48,6 +48,7 @@ class ScanJob(Base):
     status = Column(String, default="running") # running, completed, failed
     records_scanned = Column(Integer, default=0)
     violations_found = Column(Integer, default=0)
+    progress = Column(Integer, default=0) # 0 to 100
     start_time = Column(DateTime(timezone=True), server_default=func.now())
     end_time = Column(DateTime(timezone=True), nullable=True)
 

@@ -6,6 +6,8 @@ import logging
 
 import pandas as pd
 import sqlite3
+import tempfile
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -19,15 +21,34 @@ class RuleEngine:
         self.target_db_url = target_db_url
         
         if db_type == "csv":
-            # For CSV, we will use an in-memory SQLite database to run SQL queries
-            self.target_engine = create_engine('sqlite:///:memory:')
-            df = pd.read_csv(target_db_url)
-            # Create a generic 'data' table or use the filename
-            table_name = target_db_url.split('/')[-1].split('\\')[-1].split('.')[0]
-            # Clean up col names for SQLite
-            df.columns = [c.replace(' ', '_').lower() for c in df.columns]
-            df.to_sql(table_name, self.target_engine, index=True, index_label='id', if_exists='replace')
-            self.csv_table_name = table_name
+            # For CSV, use a temporary file-based SQLite database instead of in-memory.
+            # In-memory SQLite databases are destroyed when the connection closes, 
+            # causing data loss between to_sql and execute_rule.
+            self.temp_db = tempfile.NamedTemporaryFile(suffix='.db', delete=False)
+            self.temp_db_path = self.temp_db.name
+            self.temp_db.close()
+            
+            logger.info(f"Loading CSV into temporary SQLite DB: {self.temp_db_path}")
+            self.target_engine = create_engine(f'sqlite:///{self.temp_db_path}')
+            
+            # Use chunked reading for large files to avoid OOM
+            # For simplicity in this demo, we read all, but with logging
+            try:
+                df = pd.read_csv(target_db_url)
+                logger.info(f"CSV read complete: {len(df)} rows found.")
+                
+                # Create a generic 'data' table or use the filename
+                table_name = target_db_url.split('/')[-1].split('\\')[-1].split('.')[0]
+                # Clean up col names for SQLite
+                df.columns = [c.replace(' ', '_').lower() for c in df.columns]
+                
+                logger.info(f"Writing CSV data to table '{table_name}'...")
+                df.to_sql(table_name, self.target_engine, index=True, index_label='id', if_exists='replace')
+                self.csv_table_name = table_name
+                logger.info(f"Temporary database initialization complete.")
+            except Exception as e:
+                logger.error(f"Failed to load CSV: {e}")
+                raise
         else:
             self.target_engine = create_engine(target_db_url)
             
@@ -39,7 +60,8 @@ class RuleEngine:
             
         try:
             with self.target_engine.connect() as conn:
-                count = conn.execute(text(f"SELECT COUNT(*) FROM {table_to_use}")).scalar()
+                # Use double quotes for table name to handle hyphens/spaces
+                count = conn.execute(text(f'SELECT COUNT(*) FROM "{table_to_use}"')).scalar()
                 return count if count else 0
         except Exception as e:
             logger.error(f"Failed to get record count: {e}")
@@ -53,10 +75,11 @@ class RuleEngine:
         if self.db_type == "csv":
             # In CSV mode, replace the generic mock table names with the actual CSV table
             # E.g., replace 'expenses' with actual df table name.
-            # This is a basic mock string replace for the MVP.
-            sql_query = sql_query.replace('FROM expenses', f'FROM {self.csv_table_name}')
-            sql_query = sql_query.replace('FROM travel_bookings', f'FROM {self.csv_table_name}')
-            sql_query = sql_query.replace('FROM invoices', f'FROM {self.csv_table_name}')
+            # Use double quotes for the table name to handle hyphens/spaces
+            quoted_table = f'"{self.csv_table_name}"'
+            sql_query = sql_query.replace('FROM expenses', f'FROM {quoted_table}')
+            sql_query = sql_query.replace('FROM travel_bookings', f'FROM {quoted_table}')
+            sql_query = sql_query.replace('FROM invoices', f'FROM {quoted_table}')
             
             logger.info(f"Executing Rule {rule_id} on CSV table {self.csv_table_name}")
         else:
@@ -73,7 +96,12 @@ class RuleEngine:
                 for row in result:
                     # Depending on column count, construct metadata
                     metadata = dict(row._mapping)
-                    record_id = str(metadata.get('id', metadata.get('vendor_id', 'unknown')))
+                    # Try common ID columns
+                    record_id = "unknown"
+                    for id_col in ['id', 'vendor_id', 'bank_id', 'account_number', 'entity_id', 'record_id']:
+                        if id_col in metadata:
+                            record_id = str(metadata[id_col])
+                            break
                     batch.append({"record_id": record_id, "metadata": metadata})
                     if len(batch) >= 1000:
                         yield batch
@@ -117,3 +145,12 @@ class RuleEngine:
             raise
         finally:
             app_db.close()
+
+    def cleanup(self):
+        """Cleanup temporary resources."""
+        if hasattr(self, 'temp_db_path') and os.path.exists(self.temp_db_path):
+            try:
+                os.remove(self.temp_db_path)
+                logger.info(f"Cleaned up temporary DB: {self.temp_db_path}")
+            except Exception as e:
+                logger.error(f"Failed to cleanup temp DB: {e}")
