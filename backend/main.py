@@ -29,6 +29,12 @@ app.include_router(scans.router, prefix="/api/v1", tags=["Scans"])
 app.include_router(violations.router, prefix="/api/v1", tags=["Violations"])
 app.include_router(databases.router, prefix="/api/v1", tags=["Databases"])
 
+from core.scheduler import start_scheduler
+
+@app.on_event("startup")
+async def startup_event():
+    start_scheduler()
+
 @app.get("/health")
 async def health_check():
     return {"status": "healthy"}

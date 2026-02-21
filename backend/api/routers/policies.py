@@ -39,9 +39,11 @@ async def extract_rules(policy_id: int, db: Session = Depends(get_db)):
     # Mock extracted rules for the MVP demonstration
     # In a real app, this would use AI/NLP
     mock_rules = [
-        {"name": "No Personal Expenses", "description": "Detects corporate card usage for non-work related purchases.", "severity": "high", "target_table": "expenses", "sql": "SELECT * FROM expenses WHERE category = 'personal'"},
-        {"name": "Travel Limit Check", "description": "Ensures flight bookings don't exceed $1,000 without approval.", "severity": "medium", "target_table": "travel_bookings", "sql": "SELECT * FROM travel_bookings WHERE amount > 1000 AND status != 'approved'"},
-        {"name": "Duplicate Invoice Detection", "description": "Flags multiple invoices from the same vendor with the same amount.", "severity": "critical", "target_table": "invoices", "sql": "SELECT vendor_id, amount FROM invoices GROUP BY vendor_id, amount HAVING count(*) > 1"}
+        {"name": "Monitor New Users", "description": "Identify users created after 2022 for compliance review.", "severity": "medium", "target_table": "users", "condition": "created_date > '2022-01-01'", "sql": ""},
+        {"name": "No Personal Expenses", "description": "Detects corporate card usage for non-work related purchases.", "severity": "high", "target_table": "expenses", "condition": "category = 'personal'", "sql": "SELECT * FROM expenses WHERE category = 'personal'"},
+        {"name": "Travel Limit Check", "description": "Ensures flight bookings don't exceed $1,000 without approval.", "severity": "medium", "target_table": "travel_bookings", "condition": "amount > 1000 AND status != 'approved'", "sql": "SELECT * FROM travel_bookings WHERE amount > 1000 AND status != 'approved'"},
+        {"name": "Duplicate Invoice Detection", "description": "Flags multiple invoices from the same vendor with the same amount.", "severity": "critical", "target_table": "invoices", "condition": "", "sql": "SELECT id, vendor_id, amount FROM invoices GROUP BY vendor_id, amount HAVING count(*) > 1"},
+        {"name": "High Risk Jurisdiction Check", "description": "Detects accounts related to Switzerland banks for additional KYC.", "severity": "medium", "target_table": "bank_accounts", "condition": "bank_name LIKE 'Switzerland%'", "sql": "SELECT * FROM bank_accounts WHERE bank_name LIKE 'Switzerland%' LIMIT 100"}
     ]
     
     added_rules = []
@@ -51,6 +53,7 @@ async def extract_rules(policy_id: int, db: Session = Depends(get_db)):
             name=r["name"],
             description=r["description"],
             severity=r["severity"],
+            condition=r["condition"],
             sql_query=r["sql"],
             target_table=r["target_table"]
         )

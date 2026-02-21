@@ -8,7 +8,7 @@ import os
 router = APIRouter()
 
 @router.post("/scans")
-async def trigger_scan(db: Session = Depends(get_db)):
+async def trigger_scan(sync: bool = False, db: Session = Depends(get_db)):
     """Endpoint to trigger a compliance scan."""
     # 1. Check for rules
     rule_count = db.query(Rule).count()
@@ -31,11 +31,33 @@ async def trigger_scan(db: Session = Depends(get_db)):
     db.commit()
     db.refresh(new_job)
     
-    # 4. Trigger Celery Job
-    from workers.tasks import scan_table_task
-    scan_table_task.delay(new_job.id, new_job.table_name, active_conn.connection_url, active_conn.db_type)
+    if sync:
+        from engine.scanner import RuleEngine
+        try:
+            engine = RuleEngine(target_db_url=active_conn.connection_url, db_type=active_conn.db_type)
+            rules = db.query(Rule).all()
+            total_violations = 0
+            for rule in rules:
+                violations_generator = engine.execute_rule(rule.id, rule.target_table, rule.sql_query, condition=getattr(rule, 'condition', None))
+                total_violations += engine.save_violations(rule.id, rule.target_table, violations_generator)
+            
+            new_job.status = "completed"
+            new_job.violations_found = total_violations
+            new_job.progress = 100
+            db.commit()
+            return {"message": "Sync scan completed", "violations": total_violations}
+        except Exception as e:
+            new_job.status = "failed"
+            db.commit()
+            raise HTTPException(status_code=500, detail=str(e))
     
-    return {"message": f"Scan triggered successfully on {active_conn.name}", "job_id": new_job.id}
+    # 4. Trigger Celery Job
+    try:
+        from workers.tasks import scan_table_task
+        scan_table_task.delay(new_job.id, new_job.table_name, active_conn.connection_url, active_conn.db_type)
+        return {"message": f"Scan triggered successfully on {active_conn.name}", "job_id": new_job.id}
+    except Exception as e:
+        return {"message": "CELERY ERROR: Could not queue job (Redis likely down). Run with ?sync=true for local testing.", "job_id": new_job.id, "error": str(e)}
 
 @router.get("/scans")
 async def get_all_scans(db: Session = Depends(get_db)):

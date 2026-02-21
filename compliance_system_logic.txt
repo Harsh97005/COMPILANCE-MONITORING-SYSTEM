@@ -1,0 +1,32 @@
+COMPLIANCE MONITORING SYSTEM - TECHNICAL FLOW & LOGIC
+
+1. RULE EXTRACTION & STORAGE
+- When a policy PDF is uploaded, the system (currently using an AI mock) extracts specific compliance rules.
+- Each rule is stored in the 'rules' table with:
+    * 'target_table': The table to monitor (e.g., "users", "expenses").
+    * 'condition': A logical filter (e.g., "created_date > '2022-01-01'").
+    * 'sql_query': A pre-compiled SQL string (optional, generated from condition if empty).
+
+2. PERIODIC SCANNING (THE SCAN ENGINE)
+- The system uses 'APScheduler' to run a background job every 5 minutes.
+- Logic Flow:
+    a. The scheduler wakes up and fetches the active database connection.
+    b. it retrieves all compliance rules from the 'rules' table.
+    c. For each rule, it triggers a scan on the specified 'target_table'.
+    d. It creates a 'ScanJob' record to track progress, record counts, and violations found.
+
+3. OPTIMIZED DATA PROCESSING (1M+ RECORDS)
+To handle 1 million+ records efficiently, the system uses three key techniques:
+- AUTO-INDEXING: Before scanning, the engine runs "CREATE INDEX IF NOT EXISTS" on common filter columns like 'created_date'. This prevents full table scans and makes queries near-instant.
+- RESULT STREAMING: Instead of loading 1M records into RAM, the system uses SQLAlchemy's 'stream_results=True'. This uses a server-side cursor to fetch rows as needed.
+- BATCH PROCESSING: Results are processed in batches of 1,000. This ensures the application remains responsive and memory usage stays low and constant, regardless of table size.
+
+4. VIOLATION DETECTION & DEDUPLICATION
+- For every record satisfying a rule's condition, the system prepares a 'Violation' record.
+- DEDUPLICATION: To avoid redundant alerts, the system performs a "Bulk Lookup" check. It compares 'record_id' and 'rule_id' against the existing 'violations' table.
+- INSERTION: Only new violations are saved using 'bulk_save_objects' for high-speed database insertion.
+
+5. MONITORING & RESULTS
+- The results are visible in the 'violations' table and on the frontend dashboard.
+- Each violation includes metadata (the original row data) so auditors can see exactly why a record was flagged.
+- A 'ScanJob' status changes from 'running' to 'completed' once all rules are processed.

@@ -31,6 +31,11 @@ def scan_table_task(self, job_id: int, table_name: str, target_db_url: str, db_t
         total_violations = 0
         total_records_scanned = engine.get_record_count(table_name)
         
+        # Optimization: Ensure index on common filter columns
+        if table_name != "All Tables":
+            engine.ensure_index(table_name, "created_date")
+            engine.ensure_index(table_name, "id")
+
         # Initial status update
         job.records_scanned = total_records_scanned
         job.progress = 0
@@ -39,7 +44,12 @@ def scan_table_task(self, job_id: int, table_name: str, target_db_url: str, db_t
         for i, rule in enumerate(rules):
             logger.info(f"Applying Rule {rule.id} to {table_name}")
             
-            violations_generator = engine.execute_rule(rule.id, table_name, rule.sql_query)
+            violations_generator = engine.execute_rule(
+                rule.id, 
+                table_name, 
+                rule.sql_query, 
+                condition=getattr(rule, 'condition', None)
+            )
             
             saved_count = engine.save_violations(rule.id, table_name, violations_generator)
             total_violations += saved_count

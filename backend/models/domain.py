@@ -18,6 +18,7 @@ class Rule(Base):
     name = Column(String, nullable=False)
     description = Column(Text, nullable=False)
     severity = Column(String, default="medium")  # low, medium, high, critical
+    condition = Column(Text, nullable=True) # Logical condition e.g. "created_date > '2022-01-01'"
     sql_query = Column(Text, nullable=False) # Precompiled executable SQL
     target_table = Column(String, nullable=False) # The table this rule applies to
     created_at = Column(DateTime(timezone=True), server_default=func.now())
@@ -37,7 +38,7 @@ class Violation(Base):
         Index("idx_violations_rule_id", rule_id),
         Index("idx_violations_table_name", table_name),
         Index("idx_violations_detected_at", detected_at),
-        Index("idx_violations_lookup", table_name, record_id), # Faster duplicate checks
+        Index("idx_violations_unique_lookup", rule_id, table_name, record_id, unique=True), # Prevent duplicate violations per rule
     )
 
 class ScanJob(Base):
