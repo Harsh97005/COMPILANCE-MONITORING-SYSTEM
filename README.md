@@ -1,3 +1,8 @@
+<img width="960" height="450" alt="{6764CC26-AFC9-4AEA-8AEF-FE36E4D8F2A4}" src="https://github.com/user-attachments/assets/37976486-62e5-4a6b-90b1-cc2bb919d41c" />
+<img width="960" height="451" alt="{14DA6876-52B4-4FAE-9653-E5F548601529}" src="https://github.com/user-attachments/assets/9439d80a-e1ae-42cc-b8e1-63d8ce7cee58" />
+<img width="960" height="452" alt="{AF8C012B-331D-45F4-9C70-5997E155B74D}" src="https://github.com/user-attachments/assets/606b9a66-fb20-4f4a-9bd7-e34dd827db10" />
+<img width="960" height="449" alt="{D709A3FC-8C7D-4534-9FBF-4E731CC793CE}" src="https://github.com/user-attachments/assets/c3b4549e-05a0-41b2-8eb7-ab080a8bce8c" />
+
 # AI‑Powered Compliance Monitoring System
 
 Automated policy compliance monitoring system with AI-driven rule extraction and scalable database scanning.
